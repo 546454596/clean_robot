@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/cx/brainnavi/catkin_ws/src/Clean-robot-turtlebot3/clean_robot/cmake-build-debug/devel/setup.sh

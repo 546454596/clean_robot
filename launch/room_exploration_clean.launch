@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Arguments -->
+    <remap from="/path_planning_node/cleaning_plan_nodehandle/cleaning_path" to="/room_exploration_server/coverage_path" />
+    <arg name="map_file" default="$(find nav_demo)/map/mymap.yaml"/>
+    <arg name="open_rviz" default="true"/>
+    <arg name="move_forward_only" default="false"/>
+
+    <!-- 启动仿真环境 -->
+    <param name="robot_description" command="$(find xacro)/xacro $(find mycar)/urdf/gazebo/my_base_camera_laser.urdf.xacro" />
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(find mycar)/worlds/batclab.world" />
+    </include>
+    <node pkg="gazebo_ros" type="spawn_model" name="model" args="-urdf -model mycar -param robot_description"  />
+    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    <node pkg="tf2_ros" type="static_transform_publisher" name="static_transform_publisher" args="0 0 0 -1.57 0 -1.57 /support /support_depth" />
+
+    <!-- 清扫路径规划器 -->
+    <!--node pkg="clean_robot" type="path_planning_node" respawn="false" name="path_planning_node" output="screen" clear_params="true">
+        <rosparam file="$(find clean_robot)/config/costmap_common_params.yaml" command="load" ns="cleaning_costmap" />
+        <rosparam file="$(find clean_robot)/config/cleaning_costmap_params.yaml" command="load" />
+    </node-->
+    <!-- 根据清扫的路径向导航系统发送目标点位 -->
+    <!-- 设定距离当前目标点多进时候发布下一个目标点 -->
+    <param name="/NextGoal/tolerance_goal" value="0.25" />
+    <!--node pkg="clean_robot" type="next_goal" respawn="true" name="next_goal" output="screen" /-->
+    <node pkg="clean_robot" type="CCPP_path_point" name="CCPP_path_point" respawn="true" output="screen" />
+    <!-- 启动导航系统，用作目标点路径规划，实现躲避小障碍物-->
+    <include file="$(find clean_robot)/launch/room_exploration_navigation.launch">
+        <arg name="map_file" value="$(arg map_file)"/>
+    </include>
+
+</launch>
