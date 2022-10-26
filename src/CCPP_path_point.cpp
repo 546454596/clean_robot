@@ -49,6 +49,7 @@ class CCPP_path_point
 public:
     CCPP_path_point(ros::NodeHandle &nh);
     ~CCPP_path_point(){}
+    
     bool new_path = false;
     float x_current, y_current;
     float x_last_current, y_last_current;
@@ -61,18 +62,21 @@ private:
     ros::Subscriber subCleaningPath;
     void pose_callback(const nav_msgs::Odometry &poses);
     void path_callback(const nav_msgs::Path &path);
+
+    move_base_msgs::MoveBaseGoal goal;
     nav_msgs::Path passed_path;
     geometry_msgs::PoseStamped p;
     int taille_last_path = 0;
 
-    float normeNextGoal, distance, distanceBetween;
+    float normeNextGoal, distance = 0.0, distanceBetween;
     int count = 0;
     bool goal_reached = true;
     geometry_msgs::PoseStamped goal_msgs;
-    double angle;
+    double angle = 0.0;
 
     Eigen::AngleAxisd rollAngle, pitchAngle, yawAngle;
     Eigen::Quaterniond quaternion;
+    
 };
 
 CCPP_path_point::CCPP_path_point(ros::NodeHandle &nh)
@@ -83,8 +87,11 @@ CCPP_path_point::CCPP_path_point(ros::NodeHandle &nh)
     subCleaningPath = nh.subscribe("/path_planning_node/cleaning_plan_nodehandle/cleaning_path", 1000, &CCPP_path_point::path_callback, this);
 
     ros::Rate loop_rate(10);
-
-
+    MoveBaseClient ac("move_base", true);
+    while(!ac.waitForServer(ros::Duration()))
+    {
+        ROS_INFO("waiting for the move_base action server to come up.");
+    }
     if(!nh.getParam("/NextGoal/tolerance_goal", normeNextGoal))
     {
         ROS_INFO("Please set your tolerance_goal.");
@@ -99,30 +106,29 @@ CCPP_path_point::CCPP_path_point(ros::NodeHandle &nh)
             count = 0;
             new_path = false;
         }
-
         //当前处理的点
         cout << "count: " << count << "\n";
         if(!planned_path.Path.empty())
         {
             distance = sqrt(pow(x_current - planned_path.Path[count].x, 2) + pow(y_current - planned_path.Path[count].y, 2));
-            distanceBetween = sqrt(pow(x_current - x_last_current, 2) + pow(y_current - y_last_current, 2));
             if( distance <= normeNextGoal)
             {
                 count++;
                 goal_reached = true;
             }
-            else if(distanceBetween <= 1e-5)
+            else if(ac.getState() != actionlib::SimpleClientGoalState::SUCCEEDED)
             {
                 count++;
-                goal_reached = true;  
+                goal_reached = true;
+                ROS_INFO("the base failed to move.");
             }
             if(goal_reached)
             {
-                goal_msgs.header.frame_id = "map";
-                goal_msgs.header.stamp = ros::Time::now();
-                goal_msgs.pose.position.x = planned_path.Path[count].x;
-                goal_msgs.pose.position.y = planned_path.Path[count].y;
-                goal_msgs.pose.position.z = 0;
+                goal.target_pose.header.frame_id = "map";
+                goal.target_pose.header.stamp = ros::Time::now();
+                goal.target_pose.pose.position.x = planned_path.Path[count].x;
+                goal.target_pose.pose.position.y = planned_path.Path[count].y;
+                goal.target_pose.pose.position.z = 0;
                 if(count < planned_path.Path.size())
                     angle = atan2(planned_path.Path[count+1].y - planned_path.Path[count].y, planned_path.Path[count+1].x - planned_path.Path[count].x);
                 else
@@ -134,17 +140,19 @@ CCPP_path_point::CCPP_path_point(ros::NodeHandle &nh)
                 yawAngle = Eigen::AngleAxisd(eulerAngle(2), Eigen::Vector3d::UnitZ());
                 quaternion = yawAngle * pitchAngle * rollAngle;
 
-                goal_msgs.pose.orientation.w = quaternion.w();
-                goal_msgs.pose.orientation.x = quaternion.x();
-                goal_msgs.pose.orientation.y = quaternion.y();
+                goal.target_pose.pose.orientation.w = quaternion.w();
+                goal.target_pose.pose.orientation.x = quaternion.x();
+                goal.target_pose.pose.orientation.y = quaternion.y();
                 if(planned_path.Path[count].x < planned_path.Path[count+1].x)
-                    goal_msgs.pose.orientation.z = 0;
+                    goal.target_pose.pose.orientation.z = 0;
                 else
-                    goal_msgs.pose.orientation.z = 2;
+                    goal.target_pose.pose.orientation.z = 2;
 
                 cout << "New Goal: " << " " << "x = " << planned_path.Path[count].x << "y = " << planned_path.Path[count].y << "\n";
 
-                pubGoalMsgs.publish(goal_msgs);
+                ROS_INFO("Sending goal");
+                ac.sendGoal(goal);
+                ac.waitForResult(ros::Duration(1.5));
                 goal_reached = false;
             }
             x_last_current = x_current;
@@ -185,24 +193,6 @@ void  CCPP_path_point::path_callback(const nav_msgs::Path &path)
     }
 }
 
-//class quaternion_ros
-//{
-//public:
-//    float w, x, y, z;
-//    quaternion_ros(){
-//        w = 1;
-//        x = 0;
-//        y = 0;
-//        z = 0;
-//    }
-//    void toQuaternion(float pitch, float roll, float yaw);
-//};
-//
-//void quaternion_ros::toQuaternion(float pitch, float roll, float yaw) {
-//
-//}
-
-
 
 int main(int argc, char** argv)
 {
@@ -210,12 +200,5 @@ int main(int argc, char** argv)
     ros::NodeHandle nh;
     CCPP_path_point path(nh);
     
-//    MoveBaseClient ac("move_base", true);
-//    ROS_INFO("waiting for move_base started");
-//    ac.waitForServer();
-//
-//    ROS_INFO("move_base server has started.");
-//
-//    move_base_msgs::MoveBaseGoal;
     return 0;
 }
